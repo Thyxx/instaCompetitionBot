@@ -64,6 +64,8 @@ Maybe Future:
 """
 
 
+import os
+
 import InstagramAPI_local as insta
 #from InstagramAPI import InstagramAPI as insta
 import pandas as pd
@@ -77,9 +79,9 @@ print("Successfully loaded all modules")
 
 
 # Account Details
-accName = ""
-accPw   = ""
-primaryAccount = ""
+accName = os.getenv("INSTAGRAM_USERNAME", "").strip()
+accPw   = os.getenv("INSTAGRAM_PASSWORD", "").strip()
+primaryAccount = os.getenv("INSTAGRAM_PRIMARY_ACCOUNT", accName).strip()
 # Settings
 validLanguageList = ["en", "de"]
 
@@ -153,7 +155,10 @@ statCols    = [ # Bot Statistics
 
 def loadSettings(filename, headers):
     try:
-        ret = pd.DataFrame.from_csv(filename, encoding = 'utf-16')
+        ret = pd.read_csv(filename, encoding='utf-16')
+        unnamed_columns = [col for col in ret.columns if col.startswith('Unnamed:')]
+        if unnamed_columns:
+            ret = ret.drop(columns=unnamed_columns)
         # New Columns Added: Append new, Insert NaN, Sort cols
         if len(ret.keys()) < len(headers) and set(headers) != set(ret.keys()):
             newCols = list(set(headers)-set(ret.keys()))
@@ -176,7 +181,15 @@ def loadSettings(filename, headers):
     return ret
 
 def saveSettings(filename, dataframe):
-    dataframe.to_csv(filename, encoding='utf-16')
+    dataframe.to_csv(filename, encoding='utf-16', index=False)
+
+
+def ensure_credentials_set(username, password):
+    if not username or not password:
+        raise RuntimeError(
+            "Missing Instagram credentials. Set INSTAGRAM_USERNAME and INSTAGRAM_PASSWORD "
+            "environment variables or edit instagramBot.py to provide them."
+        )
 
 def getBaseComment(baseComments):
     return baseComments[random.randint(0,len(baseComments)-1)]
@@ -764,6 +777,7 @@ try:
     instagram
     print("already logged in")
 except:
+    ensure_credentials_set(accName, accPw)
     instagram = insta.InstagramAPI(accName, accPw)
     instagram.login()
     print ("Successfully logged in")
