@@ -66,8 +66,7 @@ Maybe Future:
 
 import os
 
-import InstagramAPI_local as insta
-#from InstagramAPI import InstagramAPI as insta
+from InstagramAPI import InstagramAPI as insta
 import pandas as pd
 import random
 import datetime
@@ -107,6 +106,7 @@ minComments    =     3  # Minimum # of  comments   before taking most commented 
 maxTagsCopy    =     5  # Maximum # of  tags       to copy from post
 minLength      =    80  # Minimum # of  characters in alphanumeric words to check
 minTimePassed  = 72*60  # Minimum # of  minutes    before checking followers again
+maxEntriesPerHour = 5   # Maximum contests to enter per hour
 #inactiveMonths =  6  # unfollow if not posted in X months
 
 # New to add
@@ -122,6 +122,7 @@ contestCols = [ # Contest History
                 'timestamp',        # Post Time (num)
                 'postId',           # Post ID   (str)
                 'postPk',           # Post ???  (num)
+                'postUrl',          # Post URL  (str)
                 'caption',          # Post Description (str)
                 # Action Taken
                 'commented',        # WHAT      (str)
@@ -529,6 +530,13 @@ def getPeopleTagged(post):
         print("  [ ] Follow requried: (%s)" % ", ".join(set(allFollows)))
     return allFollows
 
+def getPostUrl(post):
+    ''' Build a canonical Instagram post URL from API data when possible '''
+    code = post.get('code') or post.get('shortcode')
+    if not code:
+        return ""
+    return "https://www.instagram.com/p/{}/".format(code)
+
 def enterContest(instagram, sleepCounter, contests, post, commented, usernameList, caption=""):
     ''' Likes, follows, comments, and reposts if required '''
     global searchList
@@ -550,6 +558,7 @@ def enterContest(instagram, sleepCounter, contests, post, commented, usernameLis
         'timestamp':     post['taken_at'],
         'postPk':        post['pk'],
         'postId':        post['id'],
+        'postUrl':       getPostUrl(post),
         'caption':       post['caption']['text'].strip().replace('\n',' ').replace('\n','    '),
         # Action Taken
         'commented':     commented,
@@ -628,10 +637,12 @@ def usernamesToTagList(peopleNeeded, instagram):
 
 def search4NewUsers(searchUserList, sleepCounter):
     ''' search for new Users given list '''
-    totalFollowingIdList = getFollowIdList(instagram)  # User Already Followed
+    totalFollowingIdList = set(getFollowIdList(instagram))  # User Already Followed
     for searchUser in searchUserList:
         print("Searching for: ", searchUser)
         newUserIds = findUser(searchUser, minFollowers)
+        if not newUserIds:
+            continue
         for userId in newUserIds:
             if userId not in totalFollowingIdList: # check if already followed
                 instagram.follow(userId)   # Follow New Users
@@ -642,19 +653,17 @@ def search4NewUsers(searchUserList, sleepCounter):
 def tagsToUserIds(tagList):
     ''' given a list of userids, gets user tag by search and match '''
     ids = []
-    for tag in tagList:
+    for tag in dict.fromkeys(tagList):
         if len(tag)>1:
             added = False
-            instagram.searchUsers(tag)
+            cleaned_tag = tag.strip()
+            instagram.searchUsers(cleaned_tag)
             userList = instagram.LastJson['users']
+            tag_lower = cleaned_tag.lower()
+            tag_candidates = {tag_lower, tag_lower.lstrip('@'), '@' + tag_lower}
             for user in userList:
-                if user['username'].lower() == tag.lower():
-                    ids.append(user['pk'])
-                    added = True
-                elif user['username'].lower() == tag[1:].lower():   # if @ doesnt work
-                    ids.append(user['pk'])
-                    added = True
-                elif user['username'].lower() == ('@'+tag).lower(): # if @ doesnt work
+                username_lower = user['username'].lower()
+                if username_lower in tag_candidates:
                     ids.append(user['pk'])
                     added = True
             if added == False:  # Not found
@@ -669,15 +678,15 @@ def tagsToUserIds(tagList):
 def followUsers(userIdList):
     ''' follow a list of new users if not already followed '''
     # check if already followed
-    totalFollowingIdList = getFollowIdList(instagram)
-    toFollow     = set([str(userId) for userId in userIdList if userId not in totalFollowingIdList])
+    totalFollowingIdList = set(getFollowIdList(instagram))
+    toFollow     = {userId for userId in userIdList if userId not in totalFollowingIdList}
     sleepCounter = 0
     for userId in toFollow:
         instagram.follow(userId)   # Follow
         newFollows.append(userId)  # Keeps track of new accounts followed
         sleepCounter += randomSleepTimer(1,2) # Sleep
     # TODO:  Already followed not working
-    print("  [x] Followed: " + ", ".join(toFollow), "- already followed: ", ", ".join([str(item) for item in list(set(userIdList)-set(toFollow))]))
+    print("  [x] Followed: " + ", ".join([str(userId) for userId in toFollow]), "- already followed: ", ", ".join([str(item) for item in list(set(userIdList)-set(toFollow))]))
     return sleepCounter
 
 def checkCaptions(contests):
@@ -782,6 +791,8 @@ except:
     instagram.login()
     print ("Successfully logged in")
 sleepCounter = 0
+hourWindowStart = time.time()
+entriesThisHour = 0
 
 
 # Get global parameters
@@ -879,11 +890,22 @@ for searchTerm in searchList:               # Over User ID's / Personal Key ?
                 print("  Comment: ", commented)
                 #print("  Caption: ", caption)
                 # Just do it
+                if time.time() - hourWindowStart >= 60 * 60:
+                    hourWindowStart = time.time()
+                    entriesThisHour = 0
+                if entriesThisHour >= maxEntriesPerHour:
+                    print("  Hourly limit reached: skipping contest entry.")
+                    continue
                 if commented.find(baseComment) == -1 and contestScore > 5:
                     contests = enterContest(instagram, sleepCounter, contests, post, commented, usernameList, caption)
+                    entriesThisHour += 1
                 elif testing < 2:
-                    if   caption == "" and numPeopleToTag > 0: contests = enterContest(instagram, sleepCounter, contests, post, commented, usernameList, caption)
-                    elif testing == 0  and numPeopleToTag > 0: contests = enterContest(instagram, sleepCounter, contests, post, commented, usernameList, caption)
+                    if   caption == "" and numPeopleToTag > 0:
+                        contests = enterContest(instagram, sleepCounter, contests, post, commented, usernameList, caption)
+                        entriesThisHour += 1
+                    elif testing == 0  and numPeopleToTag > 0:
+                        contests = enterContest(instagram, sleepCounter, contests, post, commented, usernameList, caption)
+                        entriesThisHour += 1
                     else: continue
                 else: # Confirm Manually
                     done = False
@@ -892,6 +914,7 @@ for searchTerm in searchList:               # Over User ID's / Personal Key ?
                         if confirm.lower() == 'y':
                             # Comment, Like, Repost, Follow
                             contests = enterContest(instagram, sleepCounter, contests, post, commented, usernameList, caption)
+                            entriesThisHour += 1
                             done = True
                         elif confirm.lower() == 'n':        print("  Aborted."); done = True
                         elif confirm.lower() == 'cancel':   import sys; sys.exit("cancelled")
