@@ -66,8 +66,7 @@ Maybe Future:
 
 import os
 
-import InstagramAPI_local as insta
-#from InstagramAPI import InstagramAPI as insta
+from InstagramAPI import InstagramAPI as insta
 import pandas as pd
 import random
 import datetime
