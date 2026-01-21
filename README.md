@@ -10,3 +10,15 @@ Let me know if you find it useful!
 
 Best,
 RCCG
+
+## Configuration
+
+Set the following environment variables before running `instagramBot.py` to avoid storing credentials in the source code:
+
+| Variable | Description |
+| --- | --- |
+| `INSTAGRAM_USERNAME` | Username of the account that will perform the automated actions. |
+| `INSTAGRAM_PASSWORD` | Password for the automated account. |
+| `INSTAGRAM_PRIMARY_ACCOUNT` | (Optional) Username of the primary account to prioritize for reposts. Defaults to `INSTAGRAM_USERNAME`. |
+
+Alternatively, you can edit `instagramBot.py` directly, but using environment variables keeps sensitive information out of the repository and logs.
